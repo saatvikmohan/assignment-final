@@ -3,6 +3,8 @@ Assignment 8
 
 **Due: May 1, 2019 11:59 PM US Central Time**. Push to GitHub to submit the assignment.
 
+*Note that this assignment replaces the final exam and will be weighted as two assignments!*
+
 In this assignment you are creating a remote shell version of the simple shell assignment that you submitted in assignment 2. You will create two programs: `rsh-server` and `rsh-client`. The `rsh-server` program will listen for connections on a TCP server socket from instances of the `rsh-client` program. The `rsh-client` will provide a terminal-type program, similar to assignment 2, that sends commands to the `rsh-server` for remote execution and displays the results locally.
 
 ## Tasks
