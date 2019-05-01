@@ -11,12 +11,13 @@
 
 using namespace std;
 
+//max size of buffer
 static const int MAX_SIZE = 1500;
 
+//flag is set to 1 if Ctrl C is detected
 int flag = 0;
 
-void signal_callback_handler(int signum);
-
+//signal handler sets flag to 1 if SIGINT detected
 void signal_callback_handler(int signum)
 {
     flag = 1;
@@ -35,47 +36,48 @@ main (int argc, char *argv[])
 
     string servAddress = argv[1];            // First arg: server address
 
-    unsigned short echoServPort = (argc == 3) ? atoi (argv[2]) : 7;
+    unsigned short echoServPort = (argc == 3) ? atoi (argv[2]) : 7; //Second arg: Server Port
 
     try {
-        printf("To connect to server, type 'connect ipaddress:port <username> <password>'");
+        printf("To connect to server, type 'connect localhost:1234 <saat> <applebee>'");
         std::string request;
         getline(std::cin, request);
-        while (request != "connect")
+        while (request != "connect localhost:1234 <saat> <applebee>")
         {
-            printf("Wrong username or password");
+            printf("Wrong username or password\n");
             getline(std::cin, request);
         }
-        printf("Successful connection to server");
+        printf("Successful connection to server.\n");
         TCPSocket sock (servAddress, echoServPort);
         signal(SIGINT, signal_callback_handler);
 
         for (;;) {
-            printf("CS3281$\n");
-            printf("To disconnect to server, type 'disconnect'. To cancel process, do 'Ctrl C' and click enter\n");
+            printf("\nCS3281$\n");
+            printf("To disconnect to server, type 'disconnect localhost:1234'.\n"
+                   "To cancel process, do 'Ctrl C' and click enter\n");
             getline(std::cin, request);
+            //if flag = 1 detected, request is custom "end" command
             if (flag == 1)
             {
                 request = "end";
             }
 
-            if (request == "disconnect")
+            if (request == "disconnect localhost:1234")
             {
-                printf("Disconnecting...");
+                printf("Disconnecting...\n");
                 break;
             }
-            if (request.length() > MAX_SIZE)
+
+            //since this is the max size the server can receive
+            if (request.length() > 99)
             {
                 printf("Buffer overflow. Send a different command");
-                break;
-            }
-            if (request == "\n")
-            {
-                printf("\n");
                 continue;
             }
 
+            //send request
             sock.send(request.c_str(), request.length());
+            //buffer for the recv
             char reply[MAX_SIZE] = {0};
             int length = 0;
             if ((length = sock.recv(reply, MAX_SIZE - 1)) > 0)
@@ -83,12 +85,15 @@ main (int argc, char *argv[])
                 std::cout << reply << std::endl;
                 if (length == 1499)
                 {
-                    printf("\nBuffer may have overflowed. Keep clicking enter to receive the rest of the message.\n");
+                    printf("\nBuffer overflow\n");
+                    break;
                 }
             }
 
+            //after SIGINT did its work on the server side, exit out of the client
             if (request == "end")
             {
+                printf("Exiting the client...\n");
                 break;
             }
         }

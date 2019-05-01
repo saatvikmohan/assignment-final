@@ -8,19 +8,22 @@
 #include <sys/types.h>
 #include <sstream>
 
-
 using namespace std;
 
+//global variable that is will be assigned the value of thegrandchild process so that it can be killed
+// outside of execute
 pid_t pid2;
 
-int flag = 0;
-
+//maximum size of command receivable
 int MAX_SIZE = 100;
 
-void handleConnection (TCPSocket *sock); // TCP client handling function
+// TCP client handling function
+void handleConnection (TCPSocket *sock);
 
-void execute(char* const args[], TCPSocket *sock);
+//calls fork and exec to execute a command, similar to Assignment 2 code
+void execute(char* const shell_argv[], TCPSocket *sock);
 
+//sigChld handler that prints out to the server information about the process and if it executed fully or was killed
 void sigChld(int arg)
 {
     printf ("From process %d, a child process has finished execution\n",
@@ -38,6 +41,7 @@ void sigChld(int arg)
             {
                 printf ("exited, status=%d\n", WEXITSTATUS (status));
             }
+            //indicates if the process was killed by the SIGINT signal (2)
             else if (WIFSIGNALED (status))
             {
                 printf ("killed by signal %d\n", WTERMSIG (status));
@@ -77,6 +81,7 @@ int main (int argc, char *argv[])
     return 0;
 }
 
+// TCP client handling function
 void handleConnection(TCPSocket *sock)
 {
     cout << "Handling client ";
@@ -99,7 +104,6 @@ void handleConnection(TCPSocket *sock)
     cout << endl;
 
     pid_t pid = fork();
-
     if (pid > 0) { //parent
         int status = 0;
         waitpid(pid, &status, 0);
@@ -114,50 +118,51 @@ void handleConnection(TCPSocket *sock)
 
     else
     {
+        //fixed size of buffer to receive command
         char buffer[MAX_SIZE];
         int messageLength;
-
         while ((messageLength = sock->recv (buffer, MAX_SIZE-1)) > 0) {
 
+            //null-terminate the buffer
             buffer[messageLength] = '\0';
-            if (buffer[0] == 'c' && buffer[1] == 'd') {
-                std::string path;
-                for (int i = 3; i < messageLength; ++i) {
-                    path += buffer[i];
-                }
+
+            //checks to see if the SIGINT signal from client arrived (custom created "end" command)
+            if (buffer[0] == 'e' && buffer[1] == 'n' && buffer[2] == 'd') {
+                //send SIGINT to the pid of the granchild process
+                kill(pid2, SIGINT);
+                std::string outMessage = "Process killed.\n";
+                sock->send(outMessage.c_str(), outMessage.length());
+            }
+
+            //built-in cd command
+            else if (buffer[0] == 'c' && buffer[1] == 'd') {
                 std::string outMessage;
-                if (chdir(path.c_str()) != 0) {
-                    outMessage = "Invalid path";
+                if (chdir(&buffer[3]) != 0) {
+                    outMessage = "Invalid path\n";
                 } else {
-                    outMessage = "Successful change directory.";
+                    outMessage = "Successful change directory.\n";
                 }
                 sock->send(outMessage.c_str(), outMessage.length());
             }
 
+            //built-in echo command
             else if (buffer[0] == 'e' && buffer[1] == 'c' && buffer[2] == 'h' && buffer[3] == 'o') {
-                std::string path;
-                //ignoring $ char
-                for (int i = 6; i < messageLength; ++i) {
-                    path += buffer[i];
-                }
-                char *env;
                 std::string outMessage;
-                env =  getenv(path.c_str());
-                if (env != nullptr) {
+                //ignoring $ char of variable name in buffer[5]
+                char *env;
+                env =  getenv(&buffer[6]);
+                if (env != nullptr && buffer[5] == '$') {
                     sock->send(env, strlen(env));
                 } else {
-                    outMessage = "Invalid getenv";
+                    outMessage = "Invalid getenv\n";
                     sock->send(outMessage.c_str(), outMessage.length());
                 }
             }
 
-            else if (buffer[0] == 'b' && buffer[1] == 's') {
-                    kill(pid2, SIGINT);
-                    std:: string outMessage = "Process killed.";
-                    sock->send(outMessage.c_str(), outMessage.length());
-            }
+            //if not SIGINT or built-in, just a regular command, so need to do fork() and exec()
             else {
-
+                //Code straight from Assignment 2 Main
+                //place arguments into shell_argv
                 char* shell_argv[MAX_SIZE + 1];
                 int shell_argc;
                 char* pos = buffer;
@@ -182,7 +187,10 @@ void handleConnection(TCPSocket *sock)
                 }
                 shell_argv[shell_argc] = nullptr;
 
+                //execute command
                 execute(shell_argv, sock);
+
+                //necessary when doing the sleep command because the client is expecting some output
                 if (buffer[0] == 's' && buffer[1] == 'l' && buffer[2] == 'e' && buffer[3] == 'e' && buffer[4] == 'p')
                 {
                     std::string str = "Trying Sleep Command";
@@ -190,16 +198,22 @@ void handleConnection(TCPSocket *sock)
                 }
             }
         }
-
+        delete sock;
     }
-    delete sock;
 }
 
+//calls fork and exec to execute a command, similar to Assignment 2 code
 void execute(char* const shell_argv[], TCPSocket *sock)
 {
+    //register the SIGCHLD handler
     signal(SIGCHLD, sigChld);
     pid2 = fork();
-    if (pid2 == 0) {
+    if (pid2 < 0){ //Failed Fork
+        printf("*** Fork failed\n");
+        exit(1);
+    }
+    else if (pid2 == 0) { //child
+        //dup the socket description to the stdout so that the exec output goes to the client
         close(STDOUT_FILENO);
         int ret = dup2(sock->getsockDesc(), STDOUT_FILENO);
         if (ret < 0)
@@ -213,8 +227,5 @@ void execute(char* const shell_argv[], TCPSocket *sock)
             exit(1);
         }
     }
-    else if (pid2 < 0){
-        printf("*** Fork failed\n");
-        exit(1);
-    }
+
 }
